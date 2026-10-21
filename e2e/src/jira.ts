@@ -380,12 +380,17 @@ function textToParagraph(text: string): AdfNode {
 
 // ---------- Public API ----------
 
-/** All issues in the project with status "To Do". */
+/**
+ * All issues in the project whose status is in the "To Do" group (status category key 'new').
+ * Filters in code on the category key, so it works whatever the status is called.
+ * Note: scans every issue in the project, up to MAX_PAGES * PAGE_SIZE issues.
+ */
 export async function getTodoTasks(projectKey: string): Promise<JiraTask[]> {
   assertProjectKey(projectKey);
-  const jql = `project = "${projectKey}" AND status = "To Do"`;
-  logAction(`getTodoTasks: searching ${jql}`);
+  const jql = `project = "${projectKey}" ORDER BY created ASC`;
+  logAction(`getTodoTasks: searching ${jql}, keeping status category 'new'`);
   const tasks: JiraTask[] = [];
+  let scanned = 0;
   let nextPageToken: string | undefined;
 
   for (let page = 1; page <= MAX_PAGES; page++) {
@@ -399,7 +404,9 @@ export async function getTodoTasks(projectKey: string): Promise<JiraTask[]> {
     const res = await jiraRequest<SearchJqlResponse>('GET', '/rest/api/3/search/jql', { params });
     logAction(`getTodoTasks: page ${page} returned ${res.issues?.length ?? 0} issue(s)`);
     for (const issue of res.issues ?? []) {
+      scanned++;
       const f = issue.fields ?? {};
+      if (f.status?.statusCategory?.key !== 'new') continue;
       tasks.push({
         key: issue.key,
         summary: f.summary ?? '',
@@ -411,14 +418,14 @@ export async function getTodoTasks(projectKey: string): Promise<JiraTask[]> {
     }
 
     if (res.isLast === true || !res.nextPageToken) {
-      logAction(`getTodoTasks: found ${tasks.length} To Do task(s) in ${projectKey}`);
+      logAction(`getTodoTasks: found ${tasks.length} To Do task(s) out of ${scanned} issue(s) in ${projectKey}`);
       return tasks;
     }
     nextPageToken = res.nextPageToken;
   }
 
   console.warn(`[jira] getTodoTasks(${projectKey}): stopped at ${MAX_PAGES} pages; results may be incomplete`);
-  logAction(`getTodoTasks: found ${tasks.length} To Do task(s) in ${projectKey}`);
+  logAction(`getTodoTasks: found ${tasks.length} To Do task(s) out of ${scanned} issue(s) in ${projectKey}`);
   return tasks;
 }
 
