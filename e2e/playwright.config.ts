@@ -9,13 +9,17 @@ export const API_URL = process.env.API_URL || 'https://api.practicesoftwaretesti
 
 export default defineConfig({
   testDir: './tests/generated',
+  // Run policy (CLAUDE.md): one run, up to 2 retries only after a failure.
+  retries: 2,
   reporter: [
+    ['dot'],
     ['html', { open: 'never' }],
     ['json', { outputFile: 'test-results/results.json' }],
   ],
   use: {
     baseURL: 'https://practicesoftwaretesting.com/',
     testIdAttribute: 'data-test',
+    trace: 'on-first-retry',
   },
   projects: [
     {

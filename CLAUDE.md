@@ -38,7 +38,8 @@ to do this myself, so explain what you do and why in plain language.
   configured status, moveTask throws and lists the available transitions. Report them and
   stop. Never pick the first match.
 - Always move to In Progress before starting work. Move to Done only after the test passed
-  3/3 and the note was appended, with the [CHECKPOINT] first.
+  on the first attempt (see Run policy) and the note was appended, with the [CHECKPOINT]
+  first. A flaky result never moves the ticket to Done without my decision.
 - If you stop because of a finding or a failing test, leave the ticket In Progress and
   tell me what happened.
 - Never overwrite the description, only append.
@@ -78,19 +79,49 @@ evidence. Never include passwords or tokens.
 7. Turn every acceptance criterion into at least one web-first assertion
    (await expect(locator)...), with the AC number in the step name or a comment.
    No fixed sleeps or waitForTimeout.
-8. Run: `cd e2e && npx playwright test tests/generated/<file> --repeat-each=3`
-   It must pass all 3 runs.
-9. If it fails: diagnose using the trace and error output, fix the TEST (locators, waits).
-   Maximum 3 fix attempts. Never weaken or delete an assertion to make a test pass.
+8. Run once under the Run policy below: `cd e2e && npx playwright test tests/generated/<file>`
+   (no --repeat-each). Then read only the summary: `cd e2e && npx tsx scripts/run-summary.ts`.
+9. If it fails after retries: diagnose using the error and the trace, fix the TEST (locators,
+   waits), and run once more under the Run policy. Maximum 3 fix attempts. Never weaken or delete an assertion to make a test pass.
    If the app contradicts an acceptance criterion, that is a finding: report it and leave
    the test failing or marked test.fail() with a comment, and stop.
-10. If it passes 3/3: [CHECKPOINT] show me the note and the planned move to Done, then call
-    updateDescription() to append
-    `Automation test created: <filename> (passed 3/3 on <YYYY-MM-DD>)`. Never overwrite
+10. If it passed on the first attempt: [CHECKPOINT] show me the note and the planned move to
+    Done, then call updateDescription() to append
+    `Automation test created: <filename> (passed on first attempt on <YYYY-MM-DD>)`.
+    If it was FLAKY: [CHECKPOINT] show me the finding and ask what to do. Don't append a
+    "passed" note until I approve; propose "passed after <n> attempts (flaky)". Never overwrite
     the existing description.
 11. Move the ticket to Done with moveTask(key, 'done') (see Jira rules).
 12. Finish with a short summary: what was built, findings, open questions, and what you
-    did NOT cover.
+    did NOT cover. Write the same summary to e2e/reports/<ticket key>-report.md (see Run
+    policy for the test results section, plus a Jira actions table).
+
+## Run policy
+
+- Run each test once. playwright.config.ts sets `retries: 2` (max 3 attempts) and
+  `trace: 'on-first-retry'`. Retries only happen after a failure.
+- Outcomes:
+  - PASSED on the first attempt: the test passes.
+  - FLAKY (passed only after a retry): not a clean pass. Record it as an Observed finding
+    with the attempt number and the failed attempt's error. Don't move the ticket to Done;
+    ask me at the next checkpoint.
+  - FAILED all 3 attempts: stop, report the failure and the trace, leave the ticket
+    In Progress.
+- Retries are not fix attempts. After a failure you may still fix the test (max 3 fix
+  attempts), each followed by one run under this policy.
+- Never use retries or fixes to hide an app problem. If the app contradicts an acceptance
+  criterion, report it as a finding and stop.
+- Login: if logging in is part of the ticket (a step or an AC), it stays inside the ticket's
+  test. If login is only a precondition, use a Playwright `setup` project that saves the
+  session to e2e/.auth/ (gitignored, contains cookies); it follows this retry policy, and
+  if it fails after retries the dependent tests don't run. Stop and report.
+- Save tokens: the console reporter is `dot`. Don't paste or read full test output. After
+  each run read only the summary from test-results/results.json (via scripts/run-summary.ts).
+  Open a trace or full log only for a failing or flaky test, and only the relevant part.
+  Traces contain request data: never print passwords, tokens or cookies from them.
+- After each run, write one short line to the run log: attempts, outcome, duration.
+- Report: e2e/reports/<ticket key>-report.md lists, per test, the attempts, final outcome
+  (PASSED / FLAKY / FAILED) and the duration of each attempt, taken from results.json.
 
 ## Test writing rules
 
