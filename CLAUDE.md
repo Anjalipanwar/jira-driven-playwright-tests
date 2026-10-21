@@ -29,9 +29,14 @@ to do this myself, so explain what you do and why in plain language.
 ## Jira rules
 
 - Project key is SCRUM.
-- The Jira site language is English now. Use status category keys in code regardless of
-  language: moveTask(key, 'indeterminate') for In Progress, moveTask(key, 'done') for Done.
-- If moveTask can't find a transition, report the available names and stop.
+- Never match on status or transition names. They don't follow the site language (SCRUM's
+  statuses are stored in German) and can be renamed.
+- Moves use target status IDs from environment variables, never hard-coded:
+  moveTask(key, 'indeterminate') moves to the status in JIRA_STATUS_ID_IN_PROGRESS, and
+  moveTask(key, 'done') to the status in JIRA_STATUS_ID_DONE.
+- If one of those env vars is missing, or no transition (or more than one) leads to the
+  configured status, moveTask throws and lists the available transitions. Report them and
+  stop. Never pick the first match.
 - Always move to In Progress before starting work. Move to Done only after the test passed
   3/3 and the note was appended, with the [CHECKPOINT] first.
 - If you stop because of a finding or a failing test, leave the ticket In Progress and

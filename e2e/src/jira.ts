@@ -91,6 +91,19 @@ interface TransitionsResponse {
   transitions?: JiraTransition[];
 }
 
+export interface JiraStatus {
+  id: string;
+  name: string;
+  /** 'new' | 'indeterminate' | 'done' */
+  statusCategory: string;
+}
+
+/** GET /project/{key}/statuses returns one entry per issue type. */
+type ProjectStatusesResponse = {
+  name?: string;
+  statuses?: { id: string; name: string; statusCategory?: { key: string } }[];
+}[];
+
 type HttpMethod = 'GET' | 'POST' | 'PUT';
 
 // ---------- Errors ----------
@@ -439,45 +452,82 @@ export async function getTaskDescription(issueKey: string): Promise<string> {
   return text;
 }
 
-/**
- * Moves the issue. `transitionName` is matched case-insensitively, in this order:
- * transition name, target status name, then target status category key
- * ('new' | 'indeterminate' | 'done').
- */
-export async function moveTask(issueKey: string, transitionName: string): Promise<void> {
+/** Read-only: every status used in the project (deduplicated across issue types). */
+export async function getProjectStatuses(projectKey: string): Promise<JiraStatus[]> {
+  assertProjectKey(projectKey);
+  logAction(`getProjectStatuses: ${projectKey}`);
+  const res = await jiraRequest<ProjectStatusesResponse>(
+    'GET',
+    `/rest/api/3/project/${encodeURIComponent(projectKey)}/statuses`,
+  );
+  const byId = new Map<string, JiraStatus>();
+  for (const issueType of Array.isArray(res) ? res : []) {
+    for (const s of issueType.statuses ?? []) {
+      if (!byId.has(s.id)) byId.set(s.id, { id: s.id, name: s.name, statusCategory: s.statusCategory?.key ?? '' });
+    }
+  }
+  return [...byId.values()];
+}
+
+/** Read-only: transitions available from the issue's current status. */
+export async function getTransitions(issueKey: string): Promise<JiraTransition[]> {
   assertIssueKey(issueKey);
-  const wanted = transitionName.trim().toLowerCase();
-  if (!wanted) throw new JiraError('moveTask: transitionName must not be empty');
-  logAction(`moveTask: ${issueKey} -> '${transitionName}'${isDryRun() ? ' (dry run)' : ''}`);
+  const res = await jiraRequest<TransitionsResponse>('GET', `${issuePath(issueKey)}/transitions`);
+  return res.transitions ?? [];
+}
+
+/** Category keys resolved through a target status ID from the environment. */
+const STATUS_ID_ENV: Readonly<Record<string, string>> = {
+  indeterminate: 'JIRA_STATUS_ID_IN_PROGRESS',
+  done: 'JIRA_STATUS_ID_DONE',
+};
+
+/**
+ * Moves the issue. `target` is resolved like this:
+ * - 'indeterminate' / 'done': the transition whose target status ID (to.id) equals
+ *   JIRA_STATUS_ID_IN_PROGRESS / JIRA_STATUS_ID_DONE. Missing env var or no match -> error.
+ * - 'new': the transition into the 'new' category, only if exactly one exists.
+ * - anything else: transition name, then target status name (case-insensitive).
+ * Ambiguous matches always throw; it never picks the first of several.
+ */
+export async function moveTask(issueKey: string, target: string): Promise<void> {
+  assertIssueKey(issueKey);
+  const wanted = target.trim().toLowerCase();
+  if (!wanted) throw new JiraError('moveTask: target must not be empty');
+  logAction(`moveTask: ${issueKey} -> '${target}'${isDryRun() ? ' (dry run)' : ''}`);
 
   const transitionsUrl = `${issuePath(issueKey)}/transitions`;
-  const [issue, res] = await Promise.all([
-    getIssue(issueKey, ['status']),
-    jiraRequest<TransitionsResponse>('GET', transitionsUrl),
-  ]);
-  const transitions = res.transitions ?? [];
+  const [issue, transitions] = await Promise.all([getIssue(issueKey, ['status']), getTransitions(issueKey)]);
 
   const describe = (t: JiraTransition): string =>
-    `'${t.name}' (to ${t.to?.name ?? '?'}, category ${t.to?.statusCategory?.key ?? '?'})`;
-  const available = transitions.map(describe).join(', ') || 'none';
+    `'${t.name}' [transition ${t.id}] -> '${t.to?.name ?? '?'}' [status ${t.to?.id ?? '?'}, ` +
+    `category ${t.to?.statusCategory?.key ?? '?'}]`;
+  const available = transitions.map(describe).join('; ') || 'none';
+  const fail = (reason: string): JiraError =>
+    new JiraError(`${issueKey}: ${reason}. Available transitions: ${available}`);
+  const single = (candidates: JiraTransition[], what: string): JiraTransition => {
+    if (candidates.length === 0) throw fail(`no transition leads to ${what}`);
+    if (candidates.length > 1) throw fail(`${candidates.length} transitions lead to ${what}, so the choice is ambiguous`);
+    return candidates[0];
+  };
 
-  let match =
-    transitions.find((t) => t.name.toLowerCase() === wanted) ??
-    transitions.find((t) => t.to?.name.toLowerCase() === wanted);
-
-  if (!match && STATUS_CATEGORY_KEYS.includes(wanted)) {
-    const byCategory = transitions.filter((t) => t.to?.statusCategory?.key.toLowerCase() === wanted);
-    if (byCategory.length > 1) {
-      throw new JiraError(
-        `${issueKey}: ${byCategory.length} transitions lead to category '${wanted}', so the choice is ambiguous: ` +
-          `${byCategory.map(describe).join(', ')}. Pass the transition name instead.`,
-      );
-    }
-    match = byCategory[0];
-  }
-
-  if (!match) {
-    throw new JiraError(`${issueKey}: no transition matches '${transitionName}'. Available: ${available}`);
+  let match: JiraTransition;
+  const envName = STATUS_ID_ENV[wanted];
+  if (envName) {
+    const statusId = process.env[envName]?.trim();
+    if (!statusId) throw fail(`${envName} is not set, so '${wanted}' can't be resolved to a status ID`);
+    match = single(transitions.filter((t) => t.to?.id === statusId), `status ID ${statusId} (${envName})`);
+  } else if (STATUS_CATEGORY_KEYS.includes(wanted)) {
+    match = single(
+      transitions.filter((t) => t.to?.statusCategory?.key.toLowerCase() === wanted),
+      `category '${wanted}'`,
+    );
+  } else {
+    const byName = transitions.filter((t) => t.name.toLowerCase() === wanted);
+    match = single(
+      byName.length > 0 ? byName : transitions.filter((t) => t.to?.name.toLowerCase() === wanted),
+      `a transition or status named '${target}'`,
+    );
   }
 
   const from = issue.fields?.status?.name ?? 'unknown';
