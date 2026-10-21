@@ -18,7 +18,8 @@
  *   GET /products/search?q=<term>&page=<n>, which returns the same order as the page.
  */
 import { expect, test, type Page } from '@playwright/test';
-import { ADMIN_STATE, API_URL } from '../../playwright.config';
+import { ADMIN_STATE, API_URL } from '../../src/env';
+import { printNumberedList } from '../../src/report';
 
 test.use({ storageState: ADMIN_STATE });
 
@@ -86,9 +87,11 @@ test('SCRUM-7: search products by keyword and show a no-results state', async ({
 
   await test.step('Step 6: Print the first three names', async () => {
     // AC5: printed as a numbered list to the console and attached to the report.
-    const list = firstThree.map((name, i) => `${i + 1}. ${name}`).join('\n');
-    console.log(`First three search results for "${KEYWORD}":\n${list}`);
-    await test.info().attach('first-three-search-results', { body: list, contentType: 'text/plain' });
+    const list = await printNumberedList(
+      `First three search results for "${KEYWORD}"`,
+      firstThree,
+      'first-three-search-results',
+    );
 
     expect(list.split('\n')).toEqual([
       expect.stringMatching(/^1\. \S/),

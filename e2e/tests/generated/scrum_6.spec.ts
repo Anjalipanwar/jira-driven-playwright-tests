@@ -16,17 +16,8 @@
  *   subcategories); by_category_slug is undocumented but is what the page uses.
  */
 import { expect, test, type Page } from '@playwright/test';
-
-const API_URL = process.env.API_URL || 'https://api.practicesoftwaretesting.com';
-
-function adminCredentials(): { email: string; password: string } {
-  const email = process.env.TOOLSHOP_ADMIN_EMAIL;
-  const password = process.env.TOOLSHOP_ADMIN_PASSWORD;
-  if (!email || !password) {
-    throw new Error('Set TOOLSHOP_ADMIN_EMAIL and TOOLSHOP_ADMIN_PASSWORD in the repo-root .env');
-  }
-  return { email, password };
-}
+import { API_URL, adminCredentials } from '../../src/env';
+import { printNumberedList } from '../../src/report';
 
 /** Ticket steps 1-5 with AC1-AC5. Returns the first three product names in display order. */
 async function loginAndReadFirstThreeHandTools(page: Page): Promise<string[]> {
@@ -85,9 +76,7 @@ test('SCRUM-6: print the first 3 Hand Tools after login (AC1-AC6)', async ({ pag
 
   await test.step('Step 6: Print the three names', async () => {
     // AC6: numbered list to the console and attached to the report.
-    const list = names.map((name, i) => `${i + 1}. ${name}`).join('\n');
-    console.log(`First three Hand Tools:\n${list}`);
-    await test.info().attach('first-three-hand-tools', { body: list, contentType: 'text/plain' });
+    await printNumberedList('First three Hand Tools', names, 'first-three-hand-tools');
   });
 });
 

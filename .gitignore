@@ -1,9 +1,11 @@
-.venv
-.pytest_cache
-__pycache__
+# Secrets and the saved login session (contains a session token)
+.env
+.auth
+
+# Playwright output and dependencies
 e2e/node_modules
 e2e/playwright-report
 e2e/test-results
-.env
+
+# Playwright MCP browser snapshots
 .playwright-mcp
-.auth

@@ -1,20 +1,18 @@
 /**
  * Small Jira Cloud REST API v3 client.
  *
- * Env vars (loaded from the repo-root .env):
- *   JIRA_BASE_URL   e.g. https://your-site.atlassian.net
- *   JIRA_EMAIL      Atlassian account email
- *   JIRA_API_TOKEN  Atlassian API token
- *   JIRA_DRY_RUN    optional; "true" makes write functions log instead of sending
+ * Env vars (repo-root .env, loaded by ./env.ts):
+ *   JIRA_BASE_URL               e.g. https://your-site.atlassian.net
+ *   JIRA_EMAIL                  Atlassian account email
+ *   JIRA_API_TOKEN              Atlassian API token
+ *   JIRA_STATUS_ID_IN_PROGRESS  target status ID for moveTask(key, 'indeterminate')
+ *   JIRA_STATUS_ID_DONE         target status ID for moveTask(key, 'done')
+ *   JIRA_DRY_RUN                optional; "true" makes write functions log instead of sending
  *
  * Never log the Authorization header, the token, or the base64 credentials.
  */
 import axios, { type AxiosInstance } from 'axios';
-import * as dotenv from 'dotenv';
-import * as path from 'node:path';
-
-const ENV_PATH = path.resolve(__dirname, '../../.env');
-dotenv.config({ path: ENV_PATH, quiet: true });
+import { ENV_PATH } from './env';
 
 const REQUIRED_ENV = ['JIRA_BASE_URL', 'JIRA_EMAIL', 'JIRA_API_TOKEN'] as const;
 const TIMEOUT_MS = 15_000;
@@ -57,10 +55,6 @@ export interface JiraTask {
   /** Language-independent status group: 'new' | 'indeterminate' | 'done'. */
   statusCategory: string;
 }
-
-/** Jira's language-independent status groups. */
-export type StatusCategoryKey = 'new' | 'indeterminate' | 'done';
-const STATUS_CATEGORY_KEYS: readonly string[] = ['new', 'indeterminate', 'done'];
 
 export interface JiraTransition {
   id: string;
@@ -486,24 +480,26 @@ export async function getTransitions(issueKey: string): Promise<JiraTransition[]
   return res.transitions ?? [];
 }
 
-/** Category keys resolved through a target status ID from the environment. */
-const STATUS_ID_ENV: Readonly<Record<string, string>> = {
+/** Where a ticket can be moved, and the env var holding that target status ID. */
+const STATUS_ID_ENV = {
   indeterminate: 'JIRA_STATUS_ID_IN_PROGRESS',
   done: 'JIRA_STATUS_ID_DONE',
-};
+} as const;
+
+export type MoveTarget = keyof typeof STATUS_ID_ENV;
 
 /**
- * Moves the issue. `target` is resolved like this:
- * - 'indeterminate' / 'done': the transition whose target status ID (to.id) equals
- *   JIRA_STATUS_ID_IN_PROGRESS / JIRA_STATUS_ID_DONE. Missing env var or no match -> error.
- * - 'new': the transition into the 'new' category, only if exactly one exists.
- * - anything else: transition name, then target status name (case-insensitive).
- * Ambiguous matches always throw; it never picks the first of several.
+ * Moves the issue to In Progress ('indeterminate') or Done ('done'), using the one transition
+ * whose target status ID (to.id) equals JIRA_STATUS_ID_IN_PROGRESS / JIRA_STATUS_ID_DONE.
+ * Never matches on status or transition names (they follow the site language).
+ * Throws, listing the available transitions, if the env var is missing or zero or several
+ * transitions lead to that status; it never picks the first of several.
  */
-export async function moveTask(issueKey: string, target: string): Promise<void> {
+export async function moveTask(issueKey: string, target: MoveTarget): Promise<void> {
   assertIssueKey(issueKey);
-  const wanted = target.trim().toLowerCase();
-  if (!wanted) throw new JiraError('moveTask: target must not be empty');
+  if (!Object.hasOwn(STATUS_ID_ENV, target)) {
+    throw new JiraError(`moveTask: target must be one of ${Object.keys(STATUS_ID_ENV).join(', ')}, got '${target}'`);
+  }
   logAction(`moveTask: ${issueKey} -> '${target}'${isDryRun() ? ' (dry run)' : ''}`);
 
   const transitionsUrl = `${issuePath(issueKey)}/transitions`;
@@ -521,24 +517,10 @@ export async function moveTask(issueKey: string, target: string): Promise<void> 
     return candidates[0];
   };
 
-  let match: JiraTransition;
-  const envName = STATUS_ID_ENV[wanted];
-  if (envName) {
-    const statusId = process.env[envName]?.trim();
-    if (!statusId) throw fail(`${envName} is not set, so '${wanted}' can't be resolved to a status ID`);
-    match = single(transitions.filter((t) => t.to?.id === statusId), `status ID ${statusId} (${envName})`);
-  } else if (STATUS_CATEGORY_KEYS.includes(wanted)) {
-    match = single(
-      transitions.filter((t) => t.to?.statusCategory?.key.toLowerCase() === wanted),
-      `category '${wanted}'`,
-    );
-  } else {
-    const byName = transitions.filter((t) => t.name.toLowerCase() === wanted);
-    match = single(
-      byName.length > 0 ? byName : transitions.filter((t) => t.to?.name.toLowerCase() === wanted),
-      `a transition or status named '${target}'`,
-    );
-  }
+  const envName = STATUS_ID_ENV[target];
+  const statusId = process.env[envName]?.trim();
+  if (!statusId) throw fail(`${envName} is not set, so '${target}' can't be resolved to a status ID`);
+  const match = single(transitions.filter((t) => t.to?.id === statusId), `status ID ${statusId} (${envName})`);
 
   const from = issue.fields?.status?.name ?? 'unknown';
   const to = match.to?.name ?? match.name;

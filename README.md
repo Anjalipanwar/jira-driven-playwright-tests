@@ -13,18 +13,24 @@ testing practice (API: <https://api.practicesoftwaretesting.com>).
 ## What's in here
 
 ```text
-e2e/                          TypeScript + Playwright UI tests
-  playwright.config.ts        retries: 2, trace on first retry, data-test as test ID, setup project
-  src/jira.ts                 small Jira Cloud client (the only way the project talks to Jira)
-  scripts/run-summary.ts      prints a short pass/flaky/fail summary from test-results/results.json
-  tests/setup/auth.setup.ts   logs in once with the demo admin and saves the session to e2e/.auth/
-  tests/generated/            one spec per ticket (scrum_6.spec.ts, scrum_7.spec.ts, ...)
-  logs/<ticket>.md            step-by-step run log per ticket
-  reports/<ticket>-report.md  final report per ticket (AC results, attempts, Jira actions)
-tests/, clients/, services/,  Python + pytest API tests (scaffolding only so far)
-config/, schemas/
 CLAUDE.md                     the full workflow and safety rules (used with Claude Code)
+.env                          secrets, repo root, gitignored (names in e2e/.env.example)
+e2e/
+  playwright.config.ts        retries: 2, trace on first retry, data-test as test ID, setup project
+  src/
+    env.ts                    loads .env once: API_URL, ADMIN_STATE, adminCredentials()
+    report.ts                 printNumberedList(): console.log + report attachment
+    jira.ts                   small Jira Cloud client (the only way the project talks to Jira)
+  scripts/run-summary.ts      short pass/flaky/fail summary from test-results/results.json
+  tests/
+    setup/auth.setup.ts       logs in once with the demo admin, saves the session to e2e/.auth/
+    generated/                one spec per ticket (scrum_6.spec.ts, scrum_7.spec.ts, ...)
+  logs/<ticket>.md            step-by-step run log per ticket
+  reports/                    final report per ticket, plus separate findings
 ```
+
+Tests depend on `src/`, never the other way round, and specs never import from
+`playwright.config.ts`. New specs reuse `env.ts` and `report.ts` instead of copying code.
 
 ## Tickets automated so far
 
@@ -32,6 +38,8 @@ CLAUDE.md                     the full workflow and safety rules (used with Clau
 |---|---|---|---|
 | SCRUM-6 | Hand Tools category: print the first 3 tools after login | [scrum_6.spec.ts](e2e/tests/generated/scrum_6.spec.ts) | [report](e2e/reports/SCRUM-6-report.md) |
 | SCRUM-7 | Product search by keyword, plus a "no results" state | [scrum_7.spec.ts](e2e/tests/generated/scrum_7.spec.ts) | [report](e2e/reports/SCRUM-7-report.md) |
+
+Separate finding: [the category filter the UI uses is not in the API docs](e2e/reports/finding-api-by-category-slug.md) (from SCRUM-6).
 
 ## Setup
 
@@ -63,15 +71,16 @@ gitignored. Never commit them.
 
 ```bash
 cd e2e
-npx playwright test tests/generated/scrum_7.spec.ts   # one ticket
-npx playwright test                                   # everything
-npx tsx scripts/run-summary.ts                        # short summary of the last run
-npx playwright show-report                            # HTML report
+npm test -- tests/generated/scrum_7.spec.ts   # one ticket
+npm test                                      # everything
+npm run summary                               # short summary of the last run
+npm run report                                # HTML report
+npm run typecheck                             # TypeScript check, no test run
 ```
 
 The login setup runs automatically first. If it fails, the tests that depend on it don't run.
 
-`run-summary.ts` exits with `0` when everything passed on the first attempt, `2` when a test
+`npm run summary` exits with `0` when everything passed on the first attempt, `2` when a test
 was flaky, and `1` when something failed.
 
 ## How the ticket workflow works
@@ -98,11 +107,7 @@ Rules that always apply:
 - Only the Toolshop app, its API and the Jira site (through `e2e/src/jira.ts`) are contacted.
 - Demo accounts only; credentials come from environment variables and are never printed.
 - Jira status moves use status IDs from the environment, never status names (the project's
-  statuses are stored in German).
+  statuses are stored in German). `moveTask` only accepts `'indeterminate'` (In Progress)
+  and `'done'`.
 - If the app contradicts an acceptance criterion, that's reported as a finding. Assertions
   are never weakened to make a test pass.
-
-## Python API tests
-
-The repo root holds the pytest layout for API tests (`tests/`, `clients/`, `services/`,
-`config/`, `schemas/`). The files are empty placeholders for now.

@@ -6,14 +6,10 @@
  * Locators were observed during SCRUM-6 exploration (see e2e/logs/SCRUM-6.md).
  */
 import { expect, test as setup } from '@playwright/test';
-import { ADMIN_STATE } from '../../playwright.config';
+import { ADMIN_STATE, adminCredentials } from '../../src/env';
 
 setup('sign in as the demo admin', async ({ page }) => {
-  const email = process.env.TOOLSHOP_ADMIN_EMAIL;
-  const password = process.env.TOOLSHOP_ADMIN_PASSWORD;
-  if (!email || !password) {
-    throw new Error('Set TOOLSHOP_ADMIN_EMAIL and TOOLSHOP_ADMIN_PASSWORD in the repo-root .env');
-  }
+  const { email, password } = adminCredentials();
 
   await page.goto('/auth/login');
   await page.getByLabel('Email address').fill(email);

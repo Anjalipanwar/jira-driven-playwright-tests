@@ -5,8 +5,10 @@ to do this myself, so explain what you do and why in plain language.
 
 ## Scope
 
-- UI tests: TypeScript + Playwright in e2e/ (this workflow).
-- API tests: Python + pytest in the repo root (tests/). Don't touch Python files in this workflow.
+- UI tests: TypeScript + Playwright in e2e/.
+- Shared code in e2e/src/: env.ts loads .env (API_URL, ADMIN_STATE, adminCredentials()),
+  report.ts has printNumberedList(), jira.ts is the Jira client. Reuse these in specs
+  instead of copying the code.
 - App under test: <https://practicesoftwaretesting.com/> (API: <https://api.practicesoftwaretesting.com>)
 - Jira: accessed only through e2e/src/jira.ts (the site URL comes from JIRA_BASE_URL).
 - Secrets: one .env file at the repo root (not in e2e/). Variable names are listed in
@@ -127,13 +129,14 @@ evidence. Never include passwords or tokens.
 
 - Locator priority: getByRole, getByLabel, getByPlaceholder, getByTestId (data-test
   attribute), and getByText only for static, untranslated text. Never XPath.
-- Credentials: read TOOLSHOP_ADMIN_EMAIL and TOOLSHOP_ADMIN_PASSWORD from the environment.
-  Never hardcode them, and never print them.
+- Credentials: read TOOLSHOP_ADMIN_EMAIL and TOOLSHOP_ADMIN_PASSWORD from the environment
+  via adminCredentials() in e2e/src/env.ts. Never hardcode them, and never print them.
 - For external redirects, use waitForURL with an explicit timeout (15 s).
 - For hover menus: hover, wait for the option to be visible, then click.
 - For native `<select>` elements, use selectOption.
 - Print data from tests with console.log AND test.info().attach so it appears in the
-  report. Never print credentials or tokens this way.
+  report (printNumberedList() in e2e/src/report.ts does both). Never print credentials or
+  tokens this way.
 
 ## Code conventions
 

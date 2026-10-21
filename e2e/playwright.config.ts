@@ -1,14 +1,6 @@
 import { defineConfig, devices } from '@playwright/test';
-import * as dotenv from 'dotenv';
-import * as path from 'node:path';
-
-// Load the repo-root .env, resolved from this file's folder (not the current working directory).
-dotenv.config({ path: path.resolve(__dirname, '../.env'), quiet: true });
-
-export const API_URL = process.env.API_URL || 'https://api.practicesoftwaretesting.com';
-
-/** Saved admin session from the setup project (gitignored: contains the session token). */
-export const ADMIN_STATE = path.resolve(__dirname, '.auth/admin.json');
+// Loads the repo-root .env (src/env.ts is the one place that does this).
+import './src/env';
 
 export default defineConfig({
   testDir: './tests/generated',
