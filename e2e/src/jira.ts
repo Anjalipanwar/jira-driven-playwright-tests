@@ -72,7 +72,7 @@ interface JiraIssueFields {
   summary?: string;
   description?: AdfDoc | null;
   labels?: string[];
-  status?: { name: string; statusCategory?: { key: string } };
+  status?: { id?: string; name: string; statusCategory?: { key: string } };
 }
 
 interface JiraIssue {
@@ -467,6 +467,16 @@ export async function getProjectStatuses(projectKey: string): Promise<JiraStatus
     }
   }
   return [...byId.values()];
+}
+
+/** Read-only: the issue's current status (name, id, category key). */
+export async function getIssueStatus(issueKey: string): Promise<JiraStatus> {
+  assertIssueKey(issueKey);
+  const issue = await getIssue(issueKey, ['status']);
+  const s = issue.fields?.status;
+  const status = { id: s?.id ?? '', name: s?.name ?? '', statusCategory: s?.statusCategory?.key ?? '' };
+  logAction(`getIssueStatus: ${issueKey} is '${status.name}' [status ${status.id}, category ${status.statusCategory}]`);
+  return status;
 }
 
 /** Read-only: transitions available from the issue's current status. */
