@@ -8,6 +8,6 @@ resolution-markers = [
 ]
 
 [[package]]
-name = "automation-framework"
+name = "jira-driven-playwright-tests"
 version = "0.1.0"
 source = { virtual = "." }
